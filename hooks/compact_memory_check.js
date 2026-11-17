@@ -13,10 +13,10 @@
 // 可以行動——「叫模型在 compact 前做一件事」這個形狀 PreCompact 給不了，
 // 只能靠「預測 compact 快來了」提前在正常對話輪注入提醒。
 //
-// 門檻設計：context 窗口大小無法從 hook 輸入得知（1M 窗要看 beta header），
-// 所以用雙層絕對值門檻——150k（200k 窗的警戒線；對 1M 窗只是提早檢查，無害）
-// 與 800k（1M 窗的警戒線）。同一層只提醒一次（state 檔記層級），
-// compact 後 usage 回落或 SessionStart(compact) 觸發時重置。
+// 門檻設計：所有模型的 context 窗口都是 1M，用兩層絕對值門檻——400k（對話已經
+// 夠長、使用者可能手動 compact 的區間，先檢查一次）與 800k（接近自動 compact）。
+// 同一層只提醒一次（state 檔記層級），compact 後 usage 回落或
+// SessionStart(compact) 觸發時重置。
 //
 // 職責刻意限定「關係型記憶」：工作型記憶在工作流程中本來就會隨手記，
 // 弱的是關係型的觸發時機。
@@ -26,8 +26,7 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 
-const TIER_THRESHOLDS = [150_000, 800_000]; // tier 1、tier 2
-const RESET_BELOW = 100_000;                // usage 回落到此以下視為 compact 已發生
+const TIER_THRESHOLDS = [400_000, 800_000]; // tier 1、tier 2
 const TAIL_BYTES = 512 * 1024;
 const STATE_DIR = path.join(os.homedir(), '.claude', 'tmp');
 const STATE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
@@ -139,7 +138,7 @@ if (event === 'UserPromptSubmit') {
   writeStateTier(sessionId, tier);
   sweepOldStates();
 
-  process.stdout.write(`【compact 前記憶檢查】目前對話的 context 用量約 ${Math.round(ctx / 1000)}k tokens，已跨過警戒線，不久後可能觸發 compact（對話壓縮）。趁完整記憶還在——此刻的判斷比 compact 後讀摘要更準——請檢查這段對話有沒有值得長期記住的「關係型」內容：
+  process.stdout.write(`【compact 前記憶檢查】目前對話的 context 用量約 ${Math.round(ctx / 1000)}k tokens，已跨過警戒線（窗口 1M），之後可能會 compact（對話壓縮）。趁完整記憶還在——此刻的判斷比 compact 後讀摘要更準——請檢查這段對話有沒有值得長期記住的「關係型」內容：
 
 ${CHECK_GUIDE}
 
